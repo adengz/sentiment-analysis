@@ -50,4 +50,4 @@ class WordAveragingModel(nn.Module):
         Returns:
             vocab_size, embed_dim
         """
-        return self.embedding.weight.data
+        return self.embedding.weight.data.cpu()
