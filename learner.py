@@ -119,7 +119,7 @@ class SentimentLearner:
             valid_loss, valid_acc = self.evaluate()
             end = time.time()
 
-            print(f'Epoch: {epoch + 1:02}  Wall time: {end - start:.3f}s')
+            print(f'Epoch : {epoch + 1:02}\tWall time : {end - start:.3f}s')
             print(f'\tTrain Loss: {train_loss:.3f} | Train Acc: {train_acc * 100:.2f}%')
             print(f'\tValid Loss: {valid_loss:.3f} | Valid Acc: {valid_acc * 100:.2f}%')
 
