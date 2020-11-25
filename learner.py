@@ -110,7 +110,6 @@ class SentimentLearner:
         Args:
             epochs: Number of epochs to train.
             filename: Filename to save model parameters.
-
         """
         min_valid_loss = float('inf')
 
@@ -130,3 +129,17 @@ class SentimentLearner:
                 print(f'\tModel parameters saved to {filename}')
             else:
                 print()
+
+    def load_model_params(self, filename: str):
+        """
+        Loads parameters from a file. Do nothing if parameters not
+        matching exactly.
+
+        Args:
+            filename: Filename with saved model parameters.
+        """
+        curr_state = self.model.state_dict()
+        missing_keys, unexpected_keys = self.model.load_state_dict(torch.load(filename))
+        if missing_keys or unexpected_keys:
+            self.model.load_state_dict(curr_state)
+            raise KeyError('Parameters not matching with model, aborted.')
