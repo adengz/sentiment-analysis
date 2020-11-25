@@ -82,14 +82,14 @@ class AttentionWeightedWordAveragingModel(nn.Module):
         u_tensor.uniform_(-init_range, init_range)
         self.u = nn.Parameter(u_tensor)
 
-    def forward(self, inp: torch.LongTensor, return_attention: bool = False):
+    def forward(self, inp: torch.LongTensor, return_attention: bool = False) -> torch.Tensor:
         """
 
         Args:
             inp: seq_len, batch_size
             return_attention: Whether outputs attention instead of
                 logit, used only when not evaluating loss.
-                    Default: False
+                Default: False
 
         Returns:
             logit: batch_size
@@ -105,7 +105,7 @@ class AttentionWeightedWordAveragingModel(nn.Module):
         return logit
 
     @property
-    def cosine_similarity_to_u(self):
+    def cosine_similarity_to_u(self) -> torch.Tensor:
         """
         Cosine similarity between u and embedded word vectors.
 
