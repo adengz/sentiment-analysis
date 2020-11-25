@@ -24,7 +24,8 @@ class WordAveragingModel(nn.Module):
         self.embed_dropout = nn.Dropout(embed_dropout)
         self.fc = nn.Linear(embed_dim, 1)
 
-        self.embedding.weight.data.uniform_(-0.1, 0.1)
+        init_range = 0.5 / embed_dim
+        self.embedding.weight.data.uniform_(-init_range, init_range)
         self.embedding.weight.data[pad_idx].zero_()
 
     def forward(self, inp) -> torch.Tensor:
