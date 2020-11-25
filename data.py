@@ -26,12 +26,14 @@ class Vocabulary:
                 max_vocab_size + 2. Default: None
         """
         self.itos = [self.pad_token, self.unk_token]
+        self.freqs = [0] * 2
         counter = Counter()
         with open(DATA_ROOT / train_fname) as f:
             for line in f:
                 counter += Counter(line.split('\t')[0].lower().split(' '))
-        for item in counter.most_common(max_vocab_size):
-            self.itos.append(item[0])
+        for word, freq in counter.most_common(max_vocab_size):
+            self.itos.append(word)
+            self.freqs.append(freq)
         self.stoi = {word: i for i, word in enumerate(self.itos)}
 
     def __len__(self) -> int:
