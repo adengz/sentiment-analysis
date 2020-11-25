@@ -47,13 +47,14 @@ class SentiDataset(Dataset):
             filename: Dataset filename in DATA_ROOT.
             vocab: Vocabulary.
         """
-        self.df = pd.read_csv(DATA_ROOT / filename, sep='\t', header=None)
+        self.df = pd.read_csv(DATA_ROOT / filename, sep='\t', names=['text', 'label'])
+        self.df['label'] = self.df['label'].astype(float)
         self.vocab = vocab
 
     def __len__(self) -> int:
         return len(self.df)
 
-    def __getitem__(self, idx: int) -> Tuple[torch.LongTensor, int]:
+    def __getitem__(self, idx: int) -> Tuple[torch.LongTensor, float]:
         """
 
         Args:
@@ -77,9 +78,9 @@ class PadSeqCollate:
         """
         self.pad_idx = pad_idx
 
-    def __call__(self, batch: Sequence[Tuple[torch.LongTensor, int]]) -> Tuple[torch.LongTensor, torch.LongTensor]:
+    def __call__(self, batch: Sequence[Tuple[torch.LongTensor, int]]) -> Tuple[torch.LongTensor, torch.Tensor]:
         sentences, labels = zip(*batch)
-        return pad_sequence(sentences, padding_value=self.pad_idx), torch.LongTensor(labels)
+        return pad_sequence(sentences, padding_value=self.pad_idx), torch.Tensor(labels)
 
 
 def get_dataloader(filename: str, vocab: Vocabulary, batch_size: int, shuffle: bool = True, pin_memory: bool = True) \
