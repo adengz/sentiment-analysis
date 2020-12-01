@@ -51,19 +51,20 @@ class WordAveragingModel(nn.Module):
         Returns:
             vocab_size, embed_dim
         """
-        return self.embedding.weight.data.cpu()
+        return self.embedding.weight.data
 
 
 class AttentionWeightedWordAveragingModel(nn.Module):
 
-    def __init__(self, vocab_size: int, embed_dim: int, embed_dropout: float = 0.5,
-                 pad_idx: int = Vocabulary.pad_idx):
+    def __init__(self, vocab_size: int, embed_dim: int, attention: nn.Module,
+                 embed_dropout: float = 0.5, pad_idx: int = Vocabulary.pad_idx):
         """
         Adding attention weights on top of word averaging model.
 
         Args:
             vocab_size: Vocabulary size.
             embed_dim: Word embedding dimension.
+            attention: Attention calculator.
             embed_dropout: Dropout applied on word embedding.
                 Default: 0.5
             pad_idx: Index of padding token in vocabulary.
@@ -72,44 +73,67 @@ class AttentionWeightedWordAveragingModel(nn.Module):
         super(AttentionWeightedWordAveragingModel, self).__init__()
         self.embedding = nn.Embedding(vocab_size, embed_dim, padding_idx=pad_idx)
         self.embed_dropout = nn.Dropout(embed_dropout)
+        self.attention = attention
         self.fc = nn.Linear(embed_dim, 1)
 
         init_range = 0.5 / embed_dim
         self.embedding.weight.data.uniform_(-init_range, init_range)
         self.embedding.weight.data[pad_idx].zero_()
 
-        u_tensor = torch.Tensor(embed_dim)
-        u_tensor.uniform_(-init_range, init_range)
-        self.u = nn.Parameter(u_tensor)
-
-    def forward(self, inp: torch.LongTensor, return_attention: bool = False) -> torch.Tensor:
+    def forward(self, inp: torch.LongTensor) -> torch.Tensor:
         """
 
         Args:
             inp: seq_len, batch_size
-            return_attention: Whether outputs attention instead of
-                logit, used only when not evaluating loss.
-                Default: False
 
         Returns:
             logit: batch_size
             or attention (seq_len, batch_size)
         """
         embedded = self.embed_dropout(self.embedding(inp))  # seq_len, batch_size, embed_dim
-        cosine = F.cosine_similarity(embedded, self.u, dim=-1)  # seq_len, batch_size
-        attention = F.softmax(cosine, dim=0)  # seq_len, batch_size
-        hidden = torch.mul(embedded, attention.unsqueeze(2))  # seq_len, batch_size, embed_dim
-        logit = self.fc(hidden.sum(dim=0)).squeeze()  # batch_size
-        if return_attention:
-            return attention
+        attention = self.attention(embedded).unsqueeze(2)  # seq_len, batch_size, 1
+        hidden = torch.mul(embedded, attention).sum(0)  # batch_size, embed_dim
+        logit = self.fc(hidden).squeeze()  # batch_size
         return logit
 
-    @property
-    def cosine_similarity_to_u(self) -> torch.Tensor:
+
+class UAttention(nn.Module):
+
+    def __init__(self, embed_dim: int):
         """
-        Cosine similarity between u and embedded word vectors.
+        Attention computed from cosine similarity between embedded word
+        vector and u.
+
+        Args:
+            embed_dim: Word embedding dimension.
+        """
+        super(UAttention, self).__init__()
+        init_range = 0.5 / embed_dim
+        u_tensor = torch.Tensor(embed_dim)
+        u_tensor.uniform_(-init_range, init_range)
+        self.u = nn.Parameter(u_tensor)
+
+    def forward(self, embedded: torch.Tensor) -> torch.Tensor:
+        """
+
+        Args:
+            embedded: seq_len, batch_size, embed_dim
 
         Returns:
-            vocab_size
+            seq_len, batch_size
         """
-        return F.cosine_similarity(self.embedding.weight.data, self.u, dim=-1).detach().cpu()
+        cosine = self.cosine_similarity_to_u(embedded)  # seq_len, batch_size
+        attention = F.softmax(cosine, dim=0)  # seq_len, batch_size
+        return attention
+
+    def cosine_similarity_to_u(self, embedded: torch.Tensor) -> torch.Tensor:
+        """
+        Computes cosine similarity between embedded word vector and u.
+
+        Args:
+            embedded: *, embed_dim
+
+        Returns:
+            *
+        """
+        return F.cosine_similarity(embedded, self.u, dim=-1)
