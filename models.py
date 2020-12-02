@@ -92,8 +92,7 @@ class AttentionWeightedWordAveragingModel(nn.Module):
             inp: seq_len, batch_size
 
         Returns:
-            logit: batch_size
-            or attention (seq_len, batch_size)
+            batch_size
         """
         embedded = self.embed_dropout(self.embedding(inp))  # seq_len, batch_size, embed_dim
         attention = self.attention(embedded).unsqueeze(2)  # seq_len, batch_size, 1
