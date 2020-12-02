@@ -160,3 +160,54 @@ def dot_product_self_attention(embedded: torch.Tensor) -> torch.Tensor:
     summed_dot_prod = torch.bmm(permuted, permuted.transpose(1, 2)).sum(2)  # batch_size, seq_len
     attention = F.softmax(summed_dot_prod.transpose(0, 1), dim=0)  # seq_len, batch_size
     return attention
+
+
+class MultiHeadSelfAttention(nn.Module):
+
+    def __init__(self, model_dim: int, num_heads: int = 1):
+        """
+        Multi-head self (identical input Q, K, V) attention.
+
+        Args:
+            model_dim: d_model.
+            num_heads: h.
+        """
+        super(MultiHeadSelfAttention, self).__init__()
+        assert model_dim % num_heads == 0,\
+            f'Model dimension {model_dim} not divisible by number of heads {num_heads}'
+        head_dim = model_dim // num_heads
+
+        self.to_query = nn.Linear(model_dim, head_dim * num_heads, bias=False)
+        self.to_key = nn.Linear(model_dim, head_dim * num_heads, bias=False)
+        self.to_value = nn.Linear(model_dim, head_dim * num_heads, bias=False)
+        self.fc = nn.Linear(head_dim * num_heads, model_dim)
+
+        self.model_dim = model_dim
+        self.num_heads = num_heads
+        self.head_dim = head_dim
+
+    def forward(self, embedded: torch.Tensor) -> torch.Tensor:
+        """
+
+        Args:
+            embedded: batch_size, seq_len, model_dim
+
+        Returns:
+            batch_size, seq_len, model_dim
+        """
+        batch_size = embedded.shape[0]
+
+        # batch_size * num_heads, seq_len, head_dim
+        query = self.to_query(embedded).view(batch_size * self.num_heads, -1, self.head_dim)
+        key = self.to_key(embedded).view(batch_size * self.num_heads, -1, self.head_dim)
+        value = self.to_value(embedded).view(batch_size * self.num_heads, -1, self.head_dim)
+
+        # batch_size * num_heads, seq_len, seq_len
+        scaled_dot_prod = torch.bmm(query, key.transpose(1, 2)) / self.head_dim ** 0.5
+        attention = F.softmax(scaled_dot_prod, dim=2)
+
+        attended = torch.bmm(attention, value)  # batch_size * num_heads, seq_len, head_dim
+        # batch_size, seq_len, head_dim * num_head
+        concated = attended.view(batch_size, -1, self.head_dim * self.num_head)
+        output = self.fc(concated)  # batch_size, seq_len, model_dim
+        return output
