@@ -258,7 +258,7 @@ class MultiHeadSelfAttentionModel(nn.Module):
 
         attention = self.multihead_attention(embedded)
         hidden = self.layer_norm(embedded + attention)  # batch_size, seq_len, model_dim
-        logit = self.fc(hidden.mean(1))  # batch_size
+        logit = self.fc(hidden.mean(1)).squeeze()  # batch_size
         return logit
 
     def get_positional_encoding(self, seq_len: int) -> torch.Tensor:
