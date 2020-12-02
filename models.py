@@ -211,3 +211,70 @@ class MultiHeadSelfAttention(nn.Module):
         concated = attended.view(batch_size, -1, self.head_dim * self.num_head)
         output = self.fc(concated)  # batch_size, seq_len, model_dim
         return output
+
+
+class MultiHeadSelfAttentionModel(nn.Module):
+
+    def __init__(self, vocab_size: int, model_dim: int, num_heads: int = 1, pos_encode: bool = False,
+                 embed_dropout: float = 0.5, pad_idx: int = Vocabulary.pad_idx):
+        """
+        Model implementing multi-head self attention, from input to
+        the output of the first transformer encoder sublayer, then
+        mapped to a single logit for binary classification.
+
+        Args:
+            vocab_size: Vocabulary size.
+            model_dim: Word embedding dimension.
+            num_heads: Number of attention heads. Default: 1
+            pos_encode: Whether add positional encoding on embedded
+                sequence. Default: False
+            embed_dropout: Dropout applied on word embedding.
+                Default: 0.5
+            pad_idx: Index of padding token in vocabulary.
+                Default: Vocabulary.pad_idx
+        """
+        super(MultiHeadSelfAttentionModel, self).__init__()
+        self.embedding = nn.Embedding(vocab_size, model_dim, padding_idx=pad_idx)
+        self.pos_encode = pos_encode
+        self.embed_dropout = nn.Dropout(embed_dropout)
+        self.multihead_attention = MultiHeadSelfAttention(model_dim, num_heads)
+        self.layer_norm = nn.LayerNorm(model_dim)
+        self.fc = nn.Linear(model_dim, 1)
+
+    def forward(self, inp: torch.LongTensor) -> torch.Tensor:
+        """
+
+        Args:
+            inp: seq_len, batch_size
+
+        Returns:
+            batch_size
+        """
+        # batch_size, seq_len, model_dim
+        embedded = self.embedding(inp.transpose(0, 1))
+        if self.pos_encode:
+            embedded += self.get_positional_encoding(inp.shape[0])
+        embedded = self.embed_dropout(embedded)
+
+        attention = self.multihead_attention(embedded)
+        hidden = self.layer_norm(embedded + attention)  # batch_size, seq_len, model_dim
+        logit = self.fc(hidden.mean(1))  # batch_size
+        return logit
+
+    def get_positional_encoding(self, seq_len: int) -> torch.Tensor:
+        """
+        Calculates positional encoding.
+
+        Args:
+            seq_len: Input sequence length.
+
+        Returns:
+            1, seq_len, model_dim
+        """
+        pos = torch.arange(seq_len).float()
+        dim = torch.arange(self.model_dim)
+        frequency = 1 / 10000 ** (dim / self.model_dim)
+        pe = torch.matmul(pos[:, None], frequency[None, :])  # seq_len, model_dim
+        pe[:, 0::2] = torch.sin(pe[:, 0::2])
+        pe[:, 1::2] = torch.cos(pe[:, 1::2])
+        return pe[None, :, :]  # 1, seq_len, model_dim
