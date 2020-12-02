@@ -208,7 +208,7 @@ class MultiHeadSelfAttention(nn.Module):
 
         attended = torch.bmm(attention, value)  # batch_size * num_heads, seq_len, head_dim
         # batch_size, seq_len, head_dim * num_head
-        concated = attended.view(batch_size, -1, self.head_dim * self.num_head)
+        concated = attended.view(batch_size, -1, self.head_dim * self.num_heads)
         output = self.fc(concated)  # batch_size, seq_len, model_dim
         return output
 
