@@ -283,5 +283,5 @@ class MultiHeadSelfAttentionModel(nn.Module):
         pe[:, 1::2] = torch.cos(pe[:, 1::2])
 
         w = next(self.parameters())  # move pe to the same device as model
-        pe = w.new_tensor(pe[None, :, :])  # 1, seq_len, model_dim
-        return pe
+        pe = w.new_tensor(pe.tolist())
+        return pe[None, :, :]  # 1, seq_len, model_dim
