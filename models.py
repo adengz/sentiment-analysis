@@ -241,6 +241,10 @@ class MultiHeadSelfAttentionModel(nn.Module):
         self.layer_norm = nn.LayerNorm(model_dim)
         self.fc = nn.Linear(model_dim, 1)
 
+        init_range = 0.5 / model_dim
+        self.embedding.weight.data.uniform_(-init_range, init_range)
+        self.embedding.weight.data[pad_idx].zero_()
+
     def forward(self, inp: torch.LongTensor) -> torch.Tensor:
         """
 
