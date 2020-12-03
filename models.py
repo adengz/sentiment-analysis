@@ -182,7 +182,6 @@ class MultiHeadSelfAttention(nn.Module):
         self.to_value = nn.Linear(model_dim, head_dim * num_heads, bias=False)
         self.fc = nn.Linear(head_dim * num_heads, model_dim)
 
-        self.model_dim = model_dim
         self.num_heads = num_heads
         self.head_dim = head_dim
 
@@ -240,6 +239,7 @@ class MultiHeadSelfAttentionModel(nn.Module):
         self.multihead_attention = MultiHeadSelfAttention(model_dim, num_heads)
         self.layer_norm = nn.LayerNorm(model_dim)
         self.fc = nn.Linear(model_dim, 1)
+        self.model_dim = model_dim
 
         init_range = 0.5 / model_dim
         self.embedding.weight.data.uniform_(-init_range, init_range)
