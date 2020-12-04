@@ -5,6 +5,7 @@ import torch
 from torch import nn
 from torch.utils.data import DataLoader
 from torch.optim import Optimizer
+from transformers import PreTrainedModel
 
 
 class SentimentLearner:
@@ -43,7 +44,8 @@ class SentimentLearner:
         sequences, targets = batch
         sequences, targets = sequences.to(self.device), targets.to(self.device)
 
-        logits = self.model(sequences)
+        logits = self.model(sequences).logits.unsqueeze() if isinstance(self.model, PreTrainedModel) \
+            else self.model(sequences)
         loss = self.loss_fn(logits, targets)
         predictions = torch.sigmoid(logits).round_()
         accuracy = (predictions == targets).sum().item() / len(targets)
