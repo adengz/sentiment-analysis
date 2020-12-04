@@ -6,6 +6,7 @@ import torch
 from torch.utils.data import Dataset, DataLoader
 from torch.nn.utils.rnn import pad_sequence
 import pandas as pd
+from transformers import PreTrainedTokenizer
 
 DATA_ROOT = Path('data')
 
@@ -44,6 +45,7 @@ class SentiDataset(Dataset):
 
     def __init__(self, filename: str, vocab: Vocabulary):
         """
+        Dataset for non-pretrained models.
 
         Args:
             filename: Dataset filename in DATA_ROOT.
@@ -74,6 +76,7 @@ class PadSeqCollate:
 
     def __init__(self, pad_idx: int = Vocabulary.pad_idx):
         """
+        Collate function working with SentiDataset.
 
         Args:
             pad_idx: Padding index. Default: Vocabulary.pad_idx
@@ -83,6 +86,37 @@ class PadSeqCollate:
     def __call__(self, batch: Sequence[Tuple[torch.LongTensor, int]]) -> Tuple[torch.LongTensor, torch.Tensor]:
         sentences, labels = zip(*batch)
         return pad_sequence(sentences, padding_value=self.pad_idx), torch.Tensor(labels)
+
+
+class PaddedSentiDataset(Dataset):
+
+    def __init__(self, filename: str, tokenizer: PreTrainedTokenizer):
+        """
+        Dataset for BERT models.
+
+        Args:
+            filename: Dataset filename in DATA_ROOT.
+            tokenizer: Pretrained tokenizer.
+        """
+        self.df = pd.read_csv(DATA_ROOT / filename, sep='\t', names=['text', 'label'])
+        self.df['label'] = self.df['label'].astype(float)
+        self.encodings = tokenizer(list(self.df['text']), truncation=True, padding=True)['input_ids']
+
+    def __len__(self) -> int:
+        return len(self.df)
+
+    def __getitem__(self, idx: int) -> Tuple[torch.LongTensor, float]:
+        """
+
+        Args:
+            idx: Index.
+
+        Returns:
+            Tokenizer encoded text, label
+        """
+        encoded = self.encodings[idx]
+        label = self.df.loc[idx, 'label']
+        return torch.LongTensor(encoded), label
 
 
 def get_dataloader(dataset: Dataset, batch_size: int, shuffle: bool = True, pin_memory: bool = True) \
