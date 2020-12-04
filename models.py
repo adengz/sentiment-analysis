@@ -98,7 +98,7 @@ class AttentionWeightedWordAveragingModel(nn.Module):
         attention = self.attention(embedded).unsqueeze(2)  # batch_size, seq_len, 1
         hidden = torch.mul(embedded, attention).sum(1)  # batch_size, embed_dim
         if self.res_conn:
-            hidden += embedded.mean(0)
+            hidden += embedded.mean(1)
         logit = self.fc(hidden).squeeze()  # batch_size
         return logit
 
