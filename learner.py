@@ -29,7 +29,7 @@ class SentimentLearner:
         self.loss_fn = loss_fn
         self.optimizer = optim_cls(self.model.parameters(), lr=lr)
 
-    def _get_metrics(self, batch: Tuple[torch.LongTensor, torch.LongTensor]) -> Tuple[torch.Tensor, float]:
+    def _get_metrics(self, batch: Tuple[torch.LongTensor, torch.LongTensor]) -> Tuple[torch.Tensor, float, int]:
         """
         Passes a batch of data and returns metrics, such as loss,
         accuracy, etc.
@@ -38,8 +38,7 @@ class SentimentLearner:
             batch: One batch data from iterating DataLoader.
 
         Returns:
-            loss: 0-dim
-            accuracy: Accuracy
+            loss, accuracy, batch_size
         """
         sequences, targets = batch
         sequences, targets = sequences.to(self.device), targets.to(self.device)
@@ -49,7 +48,7 @@ class SentimentLearner:
         predictions = torch.sigmoid(logits).round_()
         accuracy = (predictions == targets).sum().item() / len(targets)
 
-        return loss, accuracy
+        return loss, accuracy, len(targets)
 
     @torch.no_grad()
     def evaluate(self, data_loader: DataLoader = None) -> Tuple[float, float]:
@@ -69,9 +68,8 @@ class SentimentLearner:
 
         epoch_loss = epoch_acc = total_count = 0
         for batch in data_loader:
-            loss, acc = self._get_metrics(batch)
+            loss, acc, count = self._get_metrics(batch)
 
-            count = len(batch)
             total_count += count
             epoch_loss += loss.item() * count
             epoch_acc += acc * count
@@ -90,12 +88,11 @@ class SentimentLearner:
         epoch_loss = epoch_acc = total_count = 0
         for batch in self.train_loader:
             self.optimizer.zero_grad()
-            loss, acc = self._get_metrics(batch)
+            loss, acc, count = self._get_metrics(batch)
 
             loss.backward()
             self.optimizer.step()
 
-            count = len(batch)
             total_count += count
             epoch_loss += loss.item() * count
             epoch_acc += acc * count
