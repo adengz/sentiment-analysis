@@ -85,14 +85,13 @@ class PadSeqCollate:
         return pad_sequence(sentences, padding_value=self.pad_idx), torch.Tensor(labels)
 
 
-def get_dataloader(filename: str, vocab: Vocabulary, batch_size: int, shuffle: bool = True, pin_memory: bool = True) \
+def get_dataloader(dataset: Dataset, batch_size: int, shuffle: bool = True, pin_memory: bool = True) \
         -> DataLoader:
     """
-    Wrapper function for creating a DataLoader loading a SentiDataset.
+    Wrapper function for creating a DataLoader with a given dataset.
 
     Args:
-        filename: Dataset filename in DATA_ROOT.
-        vocab: Vocabulary for building dataset.
+        dataset: Dataset.
         batch_size: Batch size.
         shuffle: Whether reshuffle data at each epoch, see DataLoader
             docs. Default: True
@@ -102,5 +101,6 @@ def get_dataloader(filename: str, vocab: Vocabulary, batch_size: int, shuffle: b
     Returns:
         DataLoader.
     """
-    return DataLoader(SentiDataset(filename, vocab), batch_size=batch_size,
-                      shuffle=shuffle, collate_fn=PadSeqCollate(), pin_memory=pin_memory)
+    collate_fn = PadSeqCollate() if isinstance(dataset, SentiDataset) else None
+    return DataLoader(dataset, batch_size=batch_size,
+                      shuffle=shuffle, collate_fn=collate_fn, pin_memory=pin_memory)
