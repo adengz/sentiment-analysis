@@ -280,6 +280,7 @@ class MultiHeadSelfAttentionModel(nn.Module):
         pe = torch.matmul(pos[:, None], frequency[None, :])  # seq_len, model_dim
         pe[:, 0::2] = torch.sin(pe[:, 0::2])
         pe[:, 1::2] = torch.cos(pe[:, 1::2])
+        pe /= self.model_dim  # to the same scale with embedding
 
         w = next(self.parameters())  # move pe to the same device as model
         pe = w.new_tensor(pe.tolist())
