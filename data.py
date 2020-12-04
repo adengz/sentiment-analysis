@@ -85,7 +85,7 @@ class PadSeqCollate:
 
     def __call__(self, batch: Sequence[Tuple[torch.LongTensor, int]]) -> Tuple[torch.LongTensor, torch.Tensor]:
         sentences, labels = zip(*batch)
-        return pad_sequence(sentences, padding_value=self.pad_idx), torch.Tensor(labels)
+        return pad_sequence(sentences, batch_first=True, padding_value=self.pad_idx), torch.Tensor(labels)
 
 
 class PaddedSentiDataset(Dataset):
