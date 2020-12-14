@@ -1,6 +1,6 @@
 from pathlib import Path
 from collections import Counter
-from typing import Optional, Tuple, Sequence
+from typing import Optional, List, Dict, Union, Tuple, Callable, Sequence
 
 import torch
 from torch.utils.data import Dataset, DataLoader
@@ -48,92 +48,98 @@ class Vocabulary:
     def __len__(self) -> int:
         return len(self.itos)
 
+    def __call__(self, texts: List[str]) -> Dict[str, List[int]]:
+        """
+        Tokenizes a sequence of texts.
+
+        Args:
+            texts: Sentences to be tokenized.
+
+        Returns:
+            Tokenized result, including input_ids and attention_mask.
+        """
+        tokenized = {'input_ids': [], 'attention_mask': []}
+        for sentence in texts:
+            encoded = [self.stoi.get(w, self.unk_idx) for w in sentence.lower().split(' ')]
+            mask = [1] * len(encoded)
+            tokenized['input_ids'].append(encoded)
+            tokenized['attention_mask'].append(mask)
+        return tokenized
+
 
 class SentiDataset(Dataset):
 
-    def __init__(self, filename: str, vocab: Vocabulary):
+    def __init__(self, filename: str, tokenizer: Union[Vocabulary, PreTrainedTokenizer]):
         """
-        Dataset for non-pretrained models.
+        Dataset for sentiment analysis, regardless of whether model is
+        pretrained.
 
         Args:
             filename: Dataset filename in DATA_ROOT.
-            vocab: Vocabulary.
+            tokenizer: Tokenizer.
         """
-        self.df = pd.read_csv(DATA_ROOT / filename, sep='\t', names=['text', 'label'])
-        self.df['label'] = self.df['label'].astype(float)
-        self.vocab = vocab
+        texts, self.labels = [], []
+        with open(DATA_ROOT / filename) as f:
+            for line in f:
+                text, label = line.split('\t')
+                texts.append(text)
+                self.labels.append(label)
+        self.tokenizer = tokenizer
+        kwargs = {}
+        if isinstance(self.tokenizer, PreTrainedTokenizer):
+            kwargs.update(dict(truncation=True, padding=True))
+        self.tokenized = self.tokenizer(texts, **kwargs)
 
     def __len__(self) -> int:
-        return len(self.df)
+        return len(self.labels)
 
-    def __getitem__(self, idx: int) -> Tuple[torch.LongTensor, float]:
+    def __getitem__(self, idx: int) -> Tuple[torch.LongTensor, torch.LongTensor, float]:
         """
 
         Args:
             idx: Index.
 
         Returns:
-            Vocabulary encoded text, label
+            Encoded text, attention mask, label
         """
-        sentence, label = self.df.iloc[idx]
-        encoded = [self.vocab.stoi.get(w, self.vocab.unk_idx) for w in sentence.lower().split(' ')]
-        return torch.LongTensor(encoded), label
+        return torch.LongTensor(self.tokenized['input_ids'][idx]), \
+            torch.LongTensor(self.tokenized['attention_mask'][idx]), \
+            float(self.labels[idx])
 
-
-class PadSeqCollate:
-
-    def __init__(self, pad_idx: int = Vocabulary.pad_idx):
+    def get_collate_fn(self) \
+            -> Optional[Callable[[Sequence[Tuple[torch.LongTensor, torch.LongTensor, float]]],
+                                 Tuple[torch.LongTensor, torch.LongTensor, torch.Tensor]]]:
         """
-        Collate function working with SentiDataset.
-
-        Args:
-            pad_idx: Padding index. Default: Vocabulary.pad_idx
-        """
-        self.pad_idx = pad_idx
-
-    def __call__(self, batch: Sequence[Tuple[torch.LongTensor, int]]) -> Tuple[torch.LongTensor, torch.Tensor]:
-        sentences, labels = zip(*batch)
-        return pad_sequence(sentences, batch_first=True, padding_value=self.pad_idx), torch.Tensor(labels)
-
-
-class PaddedSentiDataset(Dataset):
-
-    def __init__(self, filename: str, tokenizer: PreTrainedTokenizer):
-        """
-        Dataset for BERT models.
-
-        Args:
-            filename: Dataset filename in DATA_ROOT.
-            tokenizer: Pretrained tokenizer.
-        """
-        self.df = pd.read_csv(DATA_ROOT / filename, sep='\t', names=['text', 'label'])
-        self.df['label'] = self.df['label'].astype(float)
-        self.encodings = tokenizer(list(self.df['text']), truncation=True, padding=True)['input_ids']
-
-    def __len__(self) -> int:
-        return len(self.df)
-
-    def __getitem__(self, idx: int) -> Tuple[torch.LongTensor, float]:
-        """
-
-        Args:
-            idx: Index.
 
         Returns:
-            Tokenizer encoded text, label
+            Collate function used for DataLoader.
         """
-        encoded = self.encodings[idx]
-        label = self.df.loc[idx, 'label']
-        return torch.LongTensor(encoded), label
+        if isinstance(self.tokenizer, Vocabulary):
+            def padding_collate(batch: Sequence[Tuple[torch.LongTensor, torch.LongTensor, float]]) \
+                    -> Tuple[torch.LongTensor, torch.LongTensor, torch.Tensor]:
+                """
+
+                Args:
+                    batch: Batch of data from SentiDataset.
+
+                Returns:
+                    padded text encodings: batch_size, pad_len
+                    padded attention masks: batch_size, pad_len
+                    labels: batch_size
+                """
+                encodings, masks, labels = zip(*batch)
+                return pad_sequence(encodings, batch_first=True, padding_value=self.tokenizer.pad_idx), \
+                    pad_sequence(masks, batch_first=True, padding_value=0), torch.Tensor(labels)
+            return padding_collate
 
 
-def get_dataloader(dataset: Dataset, batch_size: int, shuffle: bool = True, pin_memory: bool = True) \
+def get_dataloader(dataset: SentiDataset, batch_size: int, shuffle: bool = True, pin_memory: bool = True) \
         -> DataLoader:
     """
     Wrapper function for creating a DataLoader with a given dataset.
 
     Args:
-        dataset: Dataset.
+        dataset: SentiDataset.
         batch_size: Batch size.
         shuffle: Whether reshuffle data at each epoch, see DataLoader
             docs. Default: True
@@ -143,6 +149,5 @@ def get_dataloader(dataset: Dataset, batch_size: int, shuffle: bool = True, pin_
     Returns:
         DataLoader.
     """
-    collate_fn = PadSeqCollate() if isinstance(dataset, SentiDataset) else None
-    return DataLoader(dataset, batch_size=batch_size,
-                      shuffle=shuffle, collate_fn=collate_fn, pin_memory=pin_memory)
+    return DataLoader(dataset, batch_size=batch_size, shuffle=shuffle,
+                      collate_fn=dataset.get_collate_fn(), pin_memory=pin_memory)
