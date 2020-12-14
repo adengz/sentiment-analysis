@@ -142,7 +142,7 @@ class CosineSimilarityAttention(nn.Module):
             batch_size, pad_len
         """
         pre_softmax = self.cosine_similarity_to_u(embedded)  # batch_size, pad_len
-        masked = torch.where(attention_mask == 1, pre_softmax, torch.tensor(float('-inf')))
+        masked = torch.where(attention_mask == 1, pre_softmax, embedded.new_tensor(float('-inf')))
         attention = F.softmax(masked, dim=1)  # batch_size, pad_len
         return attention
 
@@ -172,7 +172,7 @@ def dot_product_self_attention(embedded: torch.Tensor, attention_mask: torch.Lon
         batch_size, pad_len
     """
     pre_softmax = torch.bmm(embedded, embedded.transpose(1, 2)).sum(2)  # batch_size, pad_len
-    masked = torch.where(attention_mask == 1, pre_softmax, torch.tensor(float('-inf')))
+    masked = torch.where(attention_mask == 1, pre_softmax, embedded.new_tensor(float('-inf')))
     attention = F.softmax(masked, dim=1)  # batch_size, pad_len
     return attention
 
