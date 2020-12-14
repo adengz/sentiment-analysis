@@ -141,9 +141,9 @@ class CosineSimilarityAttention(nn.Module):
         Returns:
             batch_size, pad_len
         """
-        pre_softmax = self.cosine_similarity_to_u(embedded)  # batch_size, pad_len
-        masked = torch.where(attention_mask == 1, pre_softmax, embedded.new_tensor(float('-inf')))
-        attention = F.softmax(masked, dim=1)  # batch_size, pad_len
+        cosine = self.cosine_similarity_to_u(embedded)  # batch_size, pad_len
+        cosine[~attention_mask.bool()] = float('-inf')
+        attention = torch.softmax(cosine, dim=1)  # batch_size, pad_len
         return attention
 
     def cosine_similarity_to_u(self, embedded: torch.Tensor) -> torch.Tensor:
@@ -171,9 +171,9 @@ def dot_product_self_attention(embedded: torch.Tensor, attention_mask: torch.Lon
     Returns:
         batch_size, pad_len
     """
-    pre_softmax = torch.bmm(embedded, embedded.transpose(1, 2)).sum(2)  # batch_size, pad_len
-    masked = torch.where(attention_mask == 1, pre_softmax, embedded.new_tensor(float('-inf')))
-    attention = F.softmax(masked, dim=1)  # batch_size, pad_len
+    summed_dot_prod = torch.bmm(embedded, embedded.transpose(1, 2)).sum(2)  # batch_size, pad_len
+    summed_dot_prod[~attention_mask.bool()] = float('-inf')
+    attention = F.softmax(summed_dot_prod, dim=1)  # batch_size, pad_len
     return attention
 
 
@@ -252,7 +252,6 @@ class MultiHeadSelfAttentionModel(nn.Module):
         self.pos_encode = pos_encode
         self.embed_dropout = nn.Dropout(embed_dropout)
         self.multihead_attention = MultiHeadSelfAttention(model_dim, num_heads)
-        self.layer_norm = nn.LayerNorm(model_dim)
         self.fc = nn.Linear(model_dim, 1)
         self.model_dim = model_dim
 
