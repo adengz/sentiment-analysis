@@ -5,7 +5,6 @@ import torch
 from torch import nn
 from torch.utils.data import DataLoader
 from torch.optim import Optimizer
-from transformers import PreTrainedModel
 
 
 class SentimentLearner:
@@ -13,24 +12,24 @@ class SentimentLearner:
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     def __init__(self, model: nn.Module, train_loader: DataLoader, valid_loader: DataLoader,
-                 loss_fn: Callable[..., torch.Tensor], optim_cls: Callable[..., Optimizer], lr: float):
+                 optim_cls: Callable[..., Optimizer], lr: float):
         """
 
         Args:
             model: Model.
             train_loader: DataLoader for training dataset.
             valid_loader: DataLoader for validation dataset.
-            loss_fn: Loss function.
             optim_cls: Optimizer class.
             lr: Learning rate.
         """
         self.model = model.to(self.device)
         self.train_loader = train_loader
         self.valid_loader = valid_loader
-        self.loss_fn = loss_fn
+        self.loss_fn = nn.BCEWithLogitsLoss()
         self.optimizer = optim_cls(self.model.parameters(), lr=lr)
 
-    def _get_metrics(self, batch: Tuple[torch.LongTensor, torch.LongTensor]) -> Tuple[torch.Tensor, float, int]:
+    def _get_metrics(self, batch: Tuple[torch.LongTensor, torch.LongTensor, torch.LongTensor]) \
+            -> Tuple[torch.Tensor, float, int]:
         """
         Passes a batch of data and returns metrics, such as loss,
         accuracy, etc.
@@ -41,14 +40,13 @@ class SentimentLearner:
         Returns:
             loss, accuracy, batch_size
         """
-        sequences, targets = batch
-        sequences, targets = sequences.to(self.device), targets.to(self.device)
+        encodings, masks, targets = batch
+        encodings, masks, targets = encodings.to(self.device), masks.to(self.device), targets.to(self.device)
 
-        logits = self.model(sequences).logits.unsqueeze() if isinstance(self.model, PreTrainedModel) \
-            else self.model(sequences)
+        logits = self.model(encodings, masks).logits.squeeze()
         loss = self.loss_fn(logits, targets)
         predictions = torch.sigmoid(logits).round_()
-        accuracy = (predictions == targets).sum().item() / len(targets)
+        accuracy = (predictions == targets).float().mean().item()
 
         return loss, accuracy, len(targets)
 

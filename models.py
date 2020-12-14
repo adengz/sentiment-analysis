@@ -1,3 +1,4 @@
+from collections import namedtuple
 from typing import Callable
 
 import torch
@@ -5,6 +6,9 @@ from torch import nn
 import torch.nn.functional as F
 
 from data import Vocabulary
+
+
+Output = namedtuple('Output', ['logits'])
 
 
 class WordAveragingModel(nn.Module):
@@ -31,19 +35,22 @@ class WordAveragingModel(nn.Module):
         self.embedding.weight.data.uniform_(-init_range, init_range)
         self.embedding.weight.data[pad_idx].zero_()
 
-    def forward(self, inp: torch.LongTensor) -> torch.Tensor:
+    def forward(self, input_ids: torch.LongTensor, attention_mask: torch.LongTensor) -> Output:
         """
 
         Args:
-            inp: batch_size, seq_len
+            input_ids: batch_size, pad_len
+            attention_mask: batch_size, pad_len
 
         Returns:
-            batch_size
+            Output with logits.
         """
-        embedded = self.embed_dropout(self.embedding(inp))  # batch_size, seq_len, embed_dim
-        mean = embedded.mean(1)  # batch_size, embed_dim
-        logit = self.fc(mean).squeeze()  # batch_size
-        return logit
+        embedded = self.embed_dropout(self.embedding(input_ids))  # batch_size, pad_len, embed_dim
+        seq_len = attention_mask.sum(dim=1, keepdim=True)  # batch_size, 1
+        attention = (attention_mask / seq_len).unsqueeze(2)  # batch_size, pad_len, 1
+        hidden = torch.mul(embedded, attention).sum(1)  # batch_size, embed_dim
+        logits = self.fc(hidden)  # batch_size, 1
+        return Output(logits)
 
     @property
     def word_embedding(self) -> torch.Tensor:
@@ -58,7 +65,8 @@ class WordAveragingModel(nn.Module):
 
 class AttentionWeightedWordAveragingModel(nn.Module):
 
-    def __init__(self, vocab_size: int, embed_dim: int, attention: Callable[[torch.Tensor], torch.Tensor],
+    def __init__(self, vocab_size: int, embed_dim: int,
+                 attention: Callable[[torch.Tensor, torch.LongTensor], torch.Tensor],
                  res_conn: bool = False, embed_dropout: float = 0.5, pad_idx: int = Vocabulary.pad_idx):
         """
         Adding attention weights on top of word averaging model.
@@ -85,25 +93,29 @@ class AttentionWeightedWordAveragingModel(nn.Module):
         self.embedding.weight.data.uniform_(-init_range, init_range)
         self.embedding.weight.data[pad_idx].zero_()
 
-    def forward(self, inp: torch.LongTensor) -> torch.Tensor:
+    def forward(self, input_ids: torch.LongTensor, attention_mask: torch.LongTensor) -> Output:
         """
 
         Args:
-            inp: batch_size, seq_len
+            input_ids: batch_size, pad_len
+            attention_mask: batch_size, pad_len
 
         Returns:
-            batch_size
+            Output with logits.
         """
-        embedded = self.embed_dropout(self.embedding(inp))  # batch_size, seq_len, embed_dim
-        attention = self.attention(embedded).unsqueeze(2)  # batch_size, seq_len, 1
+        embedded = self.embed_dropout(self.embedding(input_ids))  # batch_size, pad_len, embed_dim
+        attention = self.attention(embedded, attention_mask).unsqueeze(2)  # batch_size, pad_len, 1
         hidden = torch.mul(embedded, attention).sum(1)  # batch_size, embed_dim
         if self.res_conn:
-            hidden += embedded.mean(1)
-        logit = self.fc(hidden).squeeze()  # batch_size
-        return logit
+            seq_len = attention_mask.sum(dim=1, keepdim=True)  # batch_size, 1
+            weights = (attention_mask / seq_len).unsqueeze(2)  # batch_size, pad_len, 1
+            embed_avg = torch.mul(embedded, weights).sum(1)  # batch_size, embed_dim
+            hidden += embed_avg
+        logits = self.fc(hidden)  # batch_size, 1
+        return Output(logits)
 
 
-class UAttention(nn.Module):
+class CosineSimilarityAttention(nn.Module):
 
     def __init__(self, embed_dim: int):
         """
@@ -113,23 +125,25 @@ class UAttention(nn.Module):
         Args:
             embed_dim: Word embedding dimension.
         """
-        super(UAttention, self).__init__()
+        super(CosineSimilarityAttention, self).__init__()
         init_range = 0.5 / embed_dim
         u_tensor = torch.Tensor(embed_dim)
         u_tensor.uniform_(-init_range, init_range)
         self.u = nn.Parameter(u_tensor)
 
-    def forward(self, embedded: torch.Tensor) -> torch.Tensor:
+    def forward(self, embedded: torch.Tensor, attention_mask: torch.LongTensor) -> torch.Tensor:
         """
 
         Args:
-            embedded: batch_size, seq_len, embed_dim
+            embedded: batch_size, pad_len, embed_dim
+            attention_mask: batch_size, pad_len
 
         Returns:
-            batch_size, seq_len
+            batch_size, pad_len
         """
-        cosine = self.cosine_similarity_to_u(embedded)  # batch_size, seq_len
-        attention = F.softmax(cosine, dim=1)  # batch_size, seq_len
+        pre_softmax = self.cosine_similarity_to_u(embedded)  # batch_size, pad_len
+        masked = torch.where(attention_mask == 1, pre_softmax, torch.tensor(float('-inf')))
+        attention = F.softmax(masked, dim=1)  # batch_size, pad_len
         return attention
 
     def cosine_similarity_to_u(self, embedded: torch.Tensor) -> torch.Tensor:
@@ -145,19 +159,21 @@ class UAttention(nn.Module):
         return F.cosine_similarity(embedded, self.u, dim=-1)
 
 
-def dot_product_self_attention(embedded: torch.Tensor) -> torch.Tensor:
+def dot_product_self_attention(embedded: torch.Tensor, attention_mask: torch.LongTensor) -> torch.Tensor:
     """
     Self attention computed from dot product with other embedded word
     vectors in the same sequence.
 
     Args:
-        embedded: batch_size, seq_len, embed_dim
+        embedded: batch_size, pad_len, embed_dim
+        attention_mask: batch_size, pad_len
 
     Returns:
-        batch_size, seq_len
+        batch_size, pad_len
     """
-    summed_dot_prod = torch.bmm(embedded, embedded.transpose(1, 2)).sum(2)  # batch_size, seq_len
-    attention = F.softmax(summed_dot_prod, dim=1)  # batch_size, seq_len
+    pre_softmax = torch.bmm(embedded, embedded.transpose(1, 2)).sum(2)  # batch_size, pad_len
+    masked = torch.where(attention_mask == 1, pre_softmax, torch.tensor(float('-inf')))
+    attention = F.softmax(masked, dim=1)  # batch_size, pad_len
     return attention
 
 
