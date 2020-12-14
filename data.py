@@ -1,6 +1,6 @@
 from pathlib import Path
 from collections import Counter
-from typing import Tuple, Sequence
+from typing import Optional, Tuple, Sequence
 
 import torch
 from torch.utils.data import Dataset, DataLoader
@@ -18,24 +18,32 @@ class Vocabulary:
     unk_idx = 1
     unk_token = '<unk>'
 
-    def __init__(self, train_fname: str = 'senti.train.tsv', max_vocab_size: int = None):
+    def __init__(self, cache_fname: str = 'vocab.csv', train_fname: str = 'senti.train.tsv',
+                 max_vocab_size: Optional[int] = None):
         """
+        Non-pretrained tokenizer built from training set.
 
         Args:
+            cache_fname: Filename for preprocessed vocabulary in
+                DATA_ROOT.
             train_fname: Filename for training data in DATA_ROOT.
             max_vocab_size: If set, caps the vocabulary size at
                 max_vocab_size + 2. Default: None
         """
-        self.itos = [self.pad_token, self.unk_token]
-        self.freqs = [0] * 2
-        counter = Counter()
-        with open(DATA_ROOT / train_fname) as f:
-            for line in f:
-                counter += Counter(line.split('\t')[0].lower().split(' '))
-        for word, freq in counter.most_common(max_vocab_size):
-            self.itos.append(word)
-            self.freqs.append(freq)
-        self.stoi = {word: i for i, word in enumerate(self.itos)}
+        special = pd.DataFrame({'token': [self.pad_token, self.unk_token], 'freq': [0, 0]})
+        cache = DATA_ROOT / cache_fname
+        if cache.exists():
+            vocab = pd.read_csv(cache)
+        else:
+            counter = Counter()
+            with open(DATA_ROOT / train_fname) as f:
+                for line in f:
+                    counter += Counter(line.split('\t')[0].lower().split(' '))
+            vocab = pd.DataFrame(counter.most_common(max_vocab_size), columns=['token', 'freq'])
+            vocab.to_csv(cache, index=False)
+        self.df = pd.concat([special, vocab], ignore_index=True)
+        self.itos = self.df['token']
+        self.stoi = {token: i for i, token in self.itos.items()}
 
     def __len__(self) -> int:
         return len(self.itos)
