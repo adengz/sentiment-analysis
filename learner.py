@@ -126,13 +126,13 @@ class SentimentLearner:
             train_loss, train_acc = self._train_1_epoch(epoch)
             valid_loss, valid_acc = self.evaluate(valid=True)
 
-            tqdm.write(f'\tTrain Loss: {train_loss:.3f}\tTrain Acc: {train_acc * 100:.2f}%')
-            tqdm.write(f'\tValid Loss: {valid_loss:.3f}\tValid Acc: {valid_acc * 100:.2f}%')
+            print(f'\tTrain Loss: {train_loss:.3f}\tTrain Acc: {train_acc * 100:.2f}%')
+            print(f'\tValid Loss: {valid_loss:.3f}\tValid Acc: {valid_acc * 100:.2f}%')
 
             if valid_loss < min_valid_loss:
                 min_valid_loss = valid_loss
                 torch.save(self.model.state_dict(), f'{filename}')
-                tqdm.write(f'\tModel parameters saved to {filename}')
+                print(f'\tModel parameters saved to {filename}')
 
             time.sleep(0.2)  # avoid nested tqdm chaos
 
@@ -149,3 +149,7 @@ class SentimentLearner:
         if missing_keys or unexpected_keys:
             self.model.load_state_dict(curr_state)
             raise KeyError('Parameters not matching with model, aborted.')
+
+    def print_test_results(self):
+        test_loss, test_acc = self.evaluate()
+        print(f'\t Test Loss: {test_loss:.3f}\t Test Acc: {test_acc * 100:.2f}%')
