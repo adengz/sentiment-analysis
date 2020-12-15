@@ -1,12 +1,13 @@
-from typing import Callable, Tuple
+from typing import Union, Callable, Tuple, Dict
 import time
 
 import torch
 from torch import nn
 from torch.optim import Optimizer
+from transformers import PreTrainedTokenizerFast
 from tqdm import tqdm
 
-from data import SentiDataset, get_dataloader
+from data import SentiDataset, Vocabulary, get_dataloader
 
 
 class SentimentLearner:
@@ -14,7 +15,8 @@ class SentimentLearner:
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     def __init__(self, model: nn.Module, train_set: SentiDataset, valid_set: SentiDataset, test_set: SentiDataset,
-                 batch_size: int, optim_cls: Callable[..., Optimizer], lr: float):
+                 tokenizer: Union[Vocabulary, PreTrainedTokenizerFast], batch_size: int,
+                 optim_cls: Callable[..., Optimizer], lr: float):
         """
         Learner for training binary sentiment analysis models.
 
@@ -23,18 +25,19 @@ class SentimentLearner:
             train_set: Training dataset.
             valid_set: Validation dataset.
             test_set: Testing dataset.
+            tokenizer: Tokenizer.
             batch_size: Batch size.
             optim_cls: Optimizer class.
             lr: Learning rate.
         """
         self.model = model.to(self.device)
-        self.train_loader = get_dataloader(train_set, batch_size)
-        self.valid_loader = get_dataloader(valid_set, batch_size)
-        self.test_loader = get_dataloader(test_set, batch_size)
+        self.train_loader = get_dataloader(train_set, tokenizer, batch_size=batch_size)
+        self.valid_loader = get_dataloader(valid_set, tokenizer, batch_size=batch_size)
+        self.test_loader = get_dataloader(test_set, tokenizer, batch_size=batch_size)
         self.loss_fn = nn.BCEWithLogitsLoss()
         self.optimizer = optim_cls(self.model.parameters(), lr=lr)
 
-    def _get_metrics(self, batch: Tuple[torch.LongTensor, torch.LongTensor, torch.LongTensor]) \
+    def _get_metrics(self, batch: Tuple[Dict[str, torch.LongTensor], torch.Tensor]) \
             -> Tuple[torch.Tensor, float, int]:
         """
         Passes a batch of data and returns metrics, such as loss,
@@ -46,15 +49,17 @@ class SentimentLearner:
         Returns:
             loss, accuracy, batch_size
         """
-        encodings, masks, targets = batch
-        encodings, masks, targets = encodings.to(self.device), masks.to(self.device), targets.to(self.device)
+        tokenized, labels = batch
+        for k in tokenized:
+            tokenized[k] = tokenized[k].to(self.device)
+        labels = labels.to(self.device)
 
-        logits = self.model(encodings, masks).logits.squeeze()
-        loss = self.loss_fn(logits, targets)
+        logits = self.model(**tokenized).logits.squeeze()
+        loss = self.loss_fn(logits, labels)
         predictions = torch.sigmoid(logits).round_()
-        accuracy = (predictions == targets).float().mean().item()
+        accuracy = (predictions == labels).float().mean().item()
 
-        return loss, accuracy, len(targets)
+        return loss, accuracy, len(labels)
 
     @torch.no_grad()
     def evaluate(self, valid: bool = False) -> Tuple[float, float]:
