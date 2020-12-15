@@ -13,7 +13,7 @@ Output = namedtuple('Output', ['logits'])
 
 class WordAveragingModel(nn.Module):
 
-    def __init__(self, vocab_size: int, embed_dim: int, embed_dropout: float = 0.5,
+    def __init__(self, vocab_size: int, embed_dim: int, embed_dropout: float = 0.25,
                  pad_idx: int = Vocabulary.pad_idx):
         """
         (Embedded) word averaging model.
@@ -22,7 +22,7 @@ class WordAveragingModel(nn.Module):
             vocab_size: Vocabulary size.
             embed_dim: Word embedding dimension.
             embed_dropout: Dropout applied on word embedding.
-                Default: 0.5
+                Default: 0.25
             pad_idx: Index of padding token in vocabulary.
                 Default: Vocabulary.pad_idx
         """
@@ -67,7 +67,7 @@ class AttentionWeightedWordAveragingModel(nn.Module):
 
     def __init__(self, vocab_size: int, embed_dim: int,
                  attention: Callable[[torch.Tensor, torch.LongTensor], torch.Tensor],
-                 res_conn: bool = False, embed_dropout: float = 0.5, pad_idx: int = Vocabulary.pad_idx):
+                 res_conn: bool = False, embed_dropout: float = 0.25, pad_idx: int = Vocabulary.pad_idx):
         """
         Adding attention weights on top of word averaging model.
 
@@ -78,7 +78,7 @@ class AttentionWeightedWordAveragingModel(nn.Module):
             res_conn: Whether apply residual connection to weighted
                 hidden state with average embedding. Default: False
             embed_dropout: Dropout applied on word embedding.
-                Default: 0.5
+                Default: 0.25
             pad_idx: Index of padding token in vocabulary.
                 Default: Vocabulary.pad_idx
         """
@@ -234,7 +234,7 @@ class MultiHeadSelfAttention(nn.Module):
 class MultiHeadSelfAttentionModel(nn.Module):
 
     def __init__(self, vocab_size: int, model_dim: int, num_heads: int = 1, pos_encode: bool = False,
-                 embed_dropout: float = 0.5, pad_idx: int = Vocabulary.pad_idx):
+                 embed_dropout: float = 0.25, pad_idx: int = Vocabulary.pad_idx):
         """
         Model implementing multi-head self attention, from input to
         the output of the first transformer encoder sublayer, then
@@ -247,7 +247,7 @@ class MultiHeadSelfAttentionModel(nn.Module):
             pos_encode: Whether add positional encoding on embedded
                 sequence. Default: False
             embed_dropout: Dropout applied on word embedding.
-                Default: 0.5
+                Default: 0.25
             pad_idx: Index of padding token in vocabulary.
                 Default: Vocabulary.pad_idx
         """
