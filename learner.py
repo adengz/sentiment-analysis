@@ -4,6 +4,7 @@ import time
 import torch
 from torch import nn
 from torch.optim import Optimizer
+from tqdm import tqdm
 
 from data import SentiDataset, get_dataloader
 
@@ -70,17 +71,17 @@ class SentimentLearner:
         self.model.eval()
         data_loader = self.valid_loader if valid else self.test_loader
 
-        epoch_loss = epoch_acc = total_count = 0
+        sum_loss = sum_acc = total_count = 0
         for batch in data_loader:
             loss, acc, count = self._get_metrics(batch)
 
             total_count += count
-            epoch_loss += loss.item() * count
-            epoch_acc += acc * count
+            sum_loss += loss.item() * count
+            sum_acc += acc * count
 
-        return epoch_loss / total_count, epoch_acc / total_count
+        return sum_loss / total_count, sum_acc / total_count
 
-    def _train_1_epoch(self) -> Tuple[float, float]:
+    def _train_1_epoch(self, epoch: int) -> Tuple[float, float]:
         """
         Trains model by 1 epoch.
 
@@ -88,20 +89,24 @@ class SentimentLearner:
             Loss, accuracy
         """
         self.model.train()
+        loader = tqdm(self.train_loader, desc=f'Epoch {epoch + 1:02}', total=len(self.train_loader))
 
-        epoch_loss = epoch_acc = total_count = 0
-        for batch in self.train_loader:
+        sum_loss = sum_acc = total_count = 0
+        for batch in loader:
             self.optimizer.zero_grad()
             loss, acc, count = self._get_metrics(batch)
 
             loss.backward()
             self.optimizer.step()
+            self.optimizer.zero_grad()
 
             total_count += count
-            epoch_loss += loss.item() * count
-            epoch_acc += acc * count
+            batch_loss = loss.item()
+            sum_loss += batch_loss * count
+            sum_acc += acc * count
+            loader.set_postfix({'Loss': batch_loss, 'Acc': acc})
 
-        return epoch_loss / total_count, epoch_acc / total_count
+        return sum_loss / total_count, sum_acc / total_count
 
     def train(self, epochs: int, filename: str):
         """
@@ -115,21 +120,18 @@ class SentimentLearner:
         min_valid_loss = float('inf')
 
         for epoch in range(epochs):
-            start = time.time()
-            train_loss, train_acc = self._train_1_epoch()
+            train_loss, train_acc = self._train_1_epoch(epoch)
             valid_loss, valid_acc = self.evaluate(valid=True)
-            end = time.time()
 
-            print(f'Epoch : {epoch + 1:02}\tWall time : {end - start:.3f}s')
-            print(f'\tTrain Loss: {train_loss:.3f} | Train Acc: {train_acc * 100:.2f}%')
-            print(f'\tValid Loss: {valid_loss:.3f} | Valid Acc: {valid_acc * 100:.2f}%')
+            tqdm.write(f'\tTrain Loss: {train_loss:.3f}\tTrain Acc: {train_acc * 100:.2f}%')
+            tqdm.write(f'\tValid Loss: {valid_loss:.3f}\tValid Acc: {valid_acc * 100:.2f}%')
 
             if valid_loss < min_valid_loss:
                 min_valid_loss = valid_loss
                 torch.save(self.model.state_dict(), f'{filename}')
-                print(f'\tModel parameters saved to {filename}')
-            else:
-                print()
+                tqdm.write(f'\tModel parameters saved to {filename}')
+
+            time.sleep(0.2)  # avoid nested tqdm chaos
 
     def load_model_params(self, filename: str):
         """
