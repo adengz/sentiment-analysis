@@ -237,7 +237,7 @@ class MultiHeadSelfAttention(nn.Module):
         attention = F.softmax(masked, dim=-1)
 
         attended = torch.einsum('bnqa,banh->bqnh', attention, value)  # batch_size, pad_len, num_heads, head_dim
-        concated = attended.view(batch_size, -1, self.num_heads * self.head_dim)
+        concated = attended.reshape(batch_size, -1, self.num_heads * self.head_dim)
         # batch_size, pad_len, num_heads * head_dim
         output = self.fc(concated)  # batch_size, pad_len, model_dim
         return output
