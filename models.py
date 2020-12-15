@@ -301,24 +301,24 @@ class MultiHeadSelfAttentionModel(nn.Module):
         logits = self.fc(hidden)  # batch_size, 1
         return Output(logits)
 
-    def get_positional_encoding(self, seq_len: int) -> torch.Tensor:
+    def get_positional_encoding(self, pad_len: int) -> torch.Tensor:
         """
         Calculates positional encoding.
 
         Args:
-            seq_len: Input sequence length.
+            pad_len: Input sequence length.
 
         Returns:
-            1, seq_len, model_dim
+            1, pad_len, model_dim
         """
-        pos = torch.arange(seq_len).float()
+        pos = torch.arange(pad_len).float()
         dim = torch.arange(self.model_dim)
         frequency = 1 / 10000 ** (dim / self.model_dim)
-        pe = torch.matmul(pos[:, None], frequency[None, :])  # seq_len, model_dim
+        pe = torch.matmul(pos[:, None], frequency[None, :])  # pad_len, model_dim
         pe[:, 0::2] = torch.sin(pe[:, 0::2])
         pe[:, 1::2] = torch.cos(pe[:, 1::2])
         pe /= self.model_dim  # to the same scale with embedding
 
         w = next(self.parameters())  # move pe to the same device as model
         pe = w.new_tensor(pe.tolist())
-        return pe[None, :, :]  # 1, seq_len, model_dim
+        return pe[None, :, :]  # 1, pad_len, model_dim
