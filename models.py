@@ -11,6 +11,22 @@ from data import Vocabulary
 Output = namedtuple('Output', ['logits'])
 
 
+def _get_masked_mean(embedded: torch.Tensor, attention_mask: torch.LongTensor) -> torch.Tensor:
+    """
+
+    Args:
+        embedded: batch_size, pad_len, embed_dim
+        attention_mask: batch_size, pad_len
+
+    Returns:
+        batch_size, embed_dim
+    """
+    seq_len = attention_mask.sum(dim=1, keepdim=True)  # batch_size, pad_len
+    weights = (attention_mask / seq_len).unsqueeze(2)  # batch_size, pad_len, 1
+    weighted_mean = torch.mul(embedded, weights).sum(1)  # batch_size, embed_dim
+    return weighted_mean
+
+
 class WordAveragingModel(nn.Module):
 
     def __init__(self, vocab_size: int, embed_dim: int, embed_dropout: float = 0.25,
@@ -46,9 +62,7 @@ class WordAveragingModel(nn.Module):
             Output with logits.
         """
         embedded = self.embed_dropout(self.embedding(input_ids))  # batch_size, pad_len, embed_dim
-        seq_len = attention_mask.sum(dim=1, keepdim=True)  # batch_size, 1
-        attention = (attention_mask / seq_len).unsqueeze(2)  # batch_size, pad_len, 1
-        hidden = torch.mul(embedded, attention).sum(1)  # batch_size, embed_dim
+        hidden = _get_masked_mean(embedded, attention_mask)  # batch_size, embed_dim
         logits = self.fc(hidden)  # batch_size, 1
         return Output(logits)
 
@@ -107,9 +121,7 @@ class AttentionWeightedWordAveragingModel(nn.Module):
         attention = self.attention(embedded, attention_mask).unsqueeze(2)  # batch_size, pad_len, 1
         hidden = torch.mul(embedded, attention).sum(1)  # batch_size, embed_dim
         if self.res_conn:
-            seq_len = attention_mask.sum(dim=1, keepdim=True)  # batch_size, 1
-            weights = (attention_mask / seq_len).unsqueeze(2)  # batch_size, pad_len, 1
-            embed_avg = torch.mul(embedded, weights).sum(1)  # batch_size, embed_dim
+            embed_avg = _get_masked_mean(embedded, attention_mask)  # batch_size, embed_dim
             hidden += embed_avg
         logits = self.fc(hidden)  # batch_size, 1
         return Output(logits)
@@ -234,7 +246,7 @@ class MultiHeadSelfAttention(nn.Module):
 class MultiHeadSelfAttentionModel(nn.Module):
 
     def __init__(self, vocab_size: int, model_dim: int, num_heads: int = 1, pos_encode: bool = False,
-                 embed_dropout: float = 0.25, pad_idx: int = Vocabulary.pad_idx):
+                 embed_dropout: float = 0.25, attention_dropout: float = 0.25, pad_idx: int = Vocabulary.pad_idx):
         """
         Model implementing multi-head self attention, from input to
         the output of the first transformer encoder sublayer, then
@@ -248,6 +260,8 @@ class MultiHeadSelfAttentionModel(nn.Module):
                 sequence. Default: False
             embed_dropout: Dropout applied on word embedding.
                 Default: 0.25
+            attention_dropout: Dropout applied on multi-head attention.
+                Default: 0.25
             pad_idx: Index of padding token in vocabulary.
                 Default: Vocabulary.pad_idx
         """
@@ -256,6 +270,7 @@ class MultiHeadSelfAttentionModel(nn.Module):
         self.pos_encode = pos_encode
         self.embed_dropout = nn.Dropout(embed_dropout)
         self.multihead_attention = MultiHeadSelfAttention(model_dim, num_heads)
+        self.attention_dropout = nn.Dropout(attention_dropout)
         self.layer_norm = nn.LayerNorm(model_dim)
         self.fc = nn.Linear(model_dim, 1)
         self.model_dim = model_dim
@@ -280,11 +295,10 @@ class MultiHeadSelfAttentionModel(nn.Module):
             embedded += self.get_positional_encoding(input_ids.shape[1])
         embedded = self.embed_dropout(embedded)
 
-        attention = self.multihead_attention(embedded, attention_mask)
-        # TODO: add dropout
-        hidden = self.layer_norm(embedded + attention)  # batch_size, pad_len, model_dim
-        # TODO: add mask
-        logits = self.fc(hidden.mean(1))  # batch_size
+        attention_out = self.attention_dropout(self.multihead_attention(embedded, attention_mask))
+        hidden = self.layer_norm(embedded + attention_out)  # batch_size, pad_len, model_dim
+        hidden = _get_masked_mean(hidden, attention_mask)  # batch_size, model_dim
+        logits = self.fc(hidden)  # batch_size, 1
         return Output(logits)
 
     def get_positional_encoding(self, seq_len: int) -> torch.Tensor:
