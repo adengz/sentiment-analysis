@@ -204,26 +204,27 @@ class MultiHeadSelfAttention(nn.Module):
         """
 
         Args:
-            embedded: batch_size, seq_len, model_dim
+            embedded: batch_size, pad_len, model_dim
 
         Returns:
-            batch_size, seq_len, model_dim
+            batch_size, pad_len, model_dim
         """
         batch_size = embedded.shape[0]
 
-        # batch_size * num_heads, seq_len, head_dim
-        query = self.to_query(embedded).view(batch_size * self.num_heads, -1, self.head_dim)
-        key = self.to_key(embedded).view(batch_size * self.num_heads, -1, self.head_dim)
-        value = self.to_value(embedded).view(batch_size * self.num_heads, -1, self.head_dim)
+        # batch_size, pad_len, num_heads, head_dim
+        splitted_shape = (batch_size, -1, self.num_heads, self.head_dim)
+        query = self.to_query(embedded).view(*splitted_shape)
+        key = self.to_key(embedded).view(*splitted_shape)
+        value = self.to_value(embedded).view(*splitted_shape)
 
-        # batch_size * num_heads, seq_len, seq_len
-        scaled_dot_prod = torch.bmm(query, key.transpose(1, 2)) / self.head_dim ** 0.5
-        attention = F.softmax(scaled_dot_prod, dim=2)
+        # batch_size, num_heads, pad_len, pad_len
+        scaled_dot_prod = torch.einsum('bqnh,bknh->bnqk', query, key) / self.head_dim ** 0.5
+        attention = F.softmax(scaled_dot_prod, dim=-1)
 
-        attended = torch.bmm(attention, value)  # batch_size * num_heads, seq_len, head_dim
-        # batch_size, seq_len, head_dim * num_head
-        concated = attended.view(batch_size, -1, self.head_dim * self.num_heads)
-        output = self.fc(concated)  # batch_size, seq_len, model_dim
+        attended = torch.einsum('bnqa,banh->bqnh', attention, value)  # batch_size, pad_len, num_heads, head_dim
+        concated = attended.view(batch_size, -1, self.num_heads * self.head_dim)
+        # batch_size, pad_len, num_heads * head_dim
+        output = self.fc(concated)  # batch_size, pad_len, model_dim
         return output
 
 
@@ -252,6 +253,7 @@ class MultiHeadSelfAttentionModel(nn.Module):
         self.pos_encode = pos_encode
         self.embed_dropout = nn.Dropout(embed_dropout)
         self.multihead_attention = MultiHeadSelfAttention(model_dim, num_heads)
+        self.layer_norm = nn.LayerNorm(model_dim)
         self.fc = nn.Linear(model_dim, 1)
         self.model_dim = model_dim
 
@@ -259,25 +261,26 @@ class MultiHeadSelfAttentionModel(nn.Module):
         self.embedding.weight.data.uniform_(-init_range, init_range)
         self.embedding.weight.data[pad_idx].zero_()
 
-    def forward(self, inp: torch.LongTensor) -> torch.Tensor:
+    def forward(self, input_ids: torch.LongTensor, attention_mask: torch.LongTensor) -> Output:
         """
 
         Args:
-            inp: batch_size, seq_len
+            input_ids: batch_size, pad_len
+            attention_mask: batch_size, pad_len
 
         Returns:
-            batch_size
+            Output with logits.
         """
-        # batch_size, seq_len, model_dim
-        embedded = self.embedding(inp)
+        # batch_size, pad_len, model_dim
+        embedded = self.embedding(input_ids)
         if self.pos_encode:
-            embedded += self.get_positional_encoding(inp.shape[1])
+            embedded += self.get_positional_encoding(input_ids.shape[1])
         embedded = self.embed_dropout(embedded)
 
         attention = self.multihead_attention(embedded)
-        hidden = self.layer_norm(embedded + attention)  # batch_size, seq_len, model_dim
-        logit = self.fc(hidden.mean(1)).squeeze()  # batch_size
-        return logit
+        hidden = self.layer_norm(embedded + attention)  # batch_size, pad_len, model_dim
+        logits = self.fc(hidden.mean(1))  # batch_size
+        return Output(logits)
 
     def get_positional_encoding(self, seq_len: int) -> torch.Tensor:
         """
