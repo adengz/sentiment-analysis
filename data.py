@@ -1,9 +1,11 @@
 from pathlib import Path
 from collections import Counter
+from functools import partial
 from typing import Optional, List, Dict, Union, Tuple
 
 import torch
 from torch.utils.data import Dataset, DataLoader
+from torch.nn.utils.rnn import pad_sequence
 import pandas as pd
 from transformers import PreTrainedTokenizerFast
 
@@ -47,101 +49,82 @@ class Vocabulary:
     def __len__(self) -> int:
         return len(self.itos)
 
-    def __call__(self, text: List[str], padding: bool = False, return_tensors: Optional[str] = None) \
-            -> Dict[str, Union[List[List[int]], torch.LongTensor]]:
+    def __call__(self, text: List[str]) -> Dict[str, List[List[int]]]:
         """
         Tokenizes a group of sentences.
 
         Args:
             text: Sentences to be tokenized.
-            padding: Whether pads to the longest sentence. Must set to
-                True if return_tensors is set. Default: False
-            return_tensors: Returns torch.LongTensor instead of
-                List[int] if set to 'pt'. Default: None
 
         Returns:
-            Tokenized result, including input_ids and attention_mask.
+            Tokenized results, input_ids only.
         """
-        input_ids, attention_mask = [], []
-        max_len = 0
+        input_ids = []
         for sentence in text:
             encoded = [self.stoi.get(w, self.unk_idx) for w in sentence.lower().split(' ')]
-            mask = [1] * len(encoded)
-            if len(encoded) > max_len:
-                max_len = len(encoded)
             input_ids.append(encoded)
-            attention_mask.append(mask)
 
-        if padding:
-            for encoded, mask in zip(input_ids, attention_mask):
-                pads = max_len - len(encoded)
-                encoded += [self.pad_idx] * pads
-                mask += [0] * pads
-
-        if return_tensors is None:
-            return {'input_ids': input_ids, 'attention_mask': attention_mask}
-        elif return_tensors == 'pt':
-            try:
-                return {'input_ids': torch.LongTensor(input_ids), 'attention_mask': torch.LongTensor(attention_mask)}
-            except ValueError:
-                raise ValueError('Unable to create tensor without padding batch sentences to the same length. '
-                                 'Set padding=True.')
-        else:
-            raise NotImplementedError('Only torch.LongTensor or nested integer list is supported for now.')
+        return {'input_ids': input_ids}
 
 
 class SentiDataset(Dataset):
 
-    def __init__(self, filename: str):
+    def __init__(self, filename: str, tokenizer: Union[Vocabulary, PreTrainedTokenizerFast]):
         """
-        Pre-tokenized dataset.
+        Dataset for sentiment analysis.
 
         Args:
             filename: Dataset filename in DATA_ROOT.
+            tokenizer: Tokenizer.
         """
-        self.df = pd.read_csv(DATA_ROOT / filename, sep='\t', names=['text', 'label'])
-        self.df['label'] = self.df['label'].astype(float)
+        texts, self.labels = [], []
+        with open(DATA_ROOT / filename) as f:
+            for line in f:
+                text, label = line.split('\t')
+                texts.append(text)
+                self.labels.append(int(label))
+        self.encodings = tokenizer(texts)['input_ids']
 
     def __len__(self) -> int:
-        return len(self.df)
+        return len(self.labels)
 
-    def __getitem__(self, idx: int) -> Tuple[str, float]:
+    def __getitem__(self, idx: int) -> Tuple[torch.LongTensor, int]:
         """
 
         Args:
             idx: Index.
 
         Returns:
-            text, label
+            Encoded sentence, label
         """
-        return tuple(self.df.iloc[idx])
+        return torch.LongTensor(self.encodings[idx]), self.labels[idx]
 
 
-class TokenizeCollate:
-
-    def __init__(self, tokenizer: Union[Vocabulary, PreTrainedTokenizerFast]):
-        """
-        Collate function with given tokenizer.
-
-        Args:
-            tokenizer: Tokenizer.
-        """
-        self.tokenizer = tokenizer
-
-    def __call__(self, batch: List[Tuple[str, float]]) -> Tuple[Dict[str, torch.LongTensor], torch.Tensor]:
-        texts, labels = zip(*batch)
-        return self.tokenizer(list(texts), padding=True, return_tensors='pt'), torch.Tensor(labels)
+pad_zeros = partial(pad_sequence, batch_first=True, padding_value=0)
 
 
-def get_dataloader(dataset: SentiDataset, tokenizer: Union[Vocabulary, PreTrainedTokenizerFast], batch_size: int,
-                   shuffle: bool = True, pin_memory: bool = True) -> DataLoader:
+def padding_collate(batch: List[Tuple[torch.LongTensor, int]]) -> Tuple[Dict[str, torch.LongTensor], torch.Tensor]:
     """
-    Wrapper function for creating a DataLoader with a given pair of
-    dataset and tokenizer.
+    Collate function bridging SentiDataset and all models.
+
+    Args:
+        batch: Batch of data from SentiDataset.
+
+    Returns:
+        Batched tokenized results (input_ids & attention_mask),
+        batched labels
+    """
+    input_ids, labels = zip(*batch)
+    attention_masks = list(map(lambda encoded: torch.ones_like(encoded), input_ids))
+    return {'input_ids': pad_zeros(input_ids), 'attention_mask': pad_zeros(attention_masks)}, torch.Tensor(labels)
+
+
+def get_dataloader(dataset: SentiDataset, batch_size: int, shuffle: bool = True, pin_memory: bool = True) -> DataLoader:
+    """
+    Wrapper function for creating a DataLoader with a given dataset.
 
     Args:
         dataset: SentiDataset.
-        tokenizer: Tokenizer.
         batch_size: Batch size.
         shuffle: Whether reshuffle data at each epoch, see DataLoader
             docs. Default: True
@@ -151,5 +134,5 @@ def get_dataloader(dataset: SentiDataset, tokenizer: Union[Vocabulary, PreTraine
     Returns:
         DataLoader.
     """
-    return DataLoader(dataset, collate_fn=TokenizeCollate(tokenizer), batch_size=batch_size,
+    return DataLoader(dataset, batch_size=batch_size, collate_fn=padding_collate,
                       shuffle=shuffle, pin_memory=pin_memory)

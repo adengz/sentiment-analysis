@@ -4,10 +4,9 @@ import time
 import torch
 from torch import nn
 from torch.optim import Optimizer
-from transformers import PreTrainedTokenizerFast
 from tqdm import tqdm
 
-from data import SentiDataset, Vocabulary, get_dataloader
+from data import SentiDataset, get_dataloader
 
 
 class SentimentLearner:
@@ -15,8 +14,7 @@ class SentimentLearner:
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     def __init__(self, model: nn.Module, train_set: SentiDataset, valid_set: SentiDataset, test_set: SentiDataset,
-                 tokenizer: Union[Vocabulary, PreTrainedTokenizerFast], batch_size: int,
-                 optim_cls: Callable[..., Optimizer], lr: float):
+                 batch_size: int, optim_cls: Callable[..., Optimizer], lr: float):
         """
         Learner for training binary sentiment analysis models.
 
@@ -31,9 +29,9 @@ class SentimentLearner:
             lr: Learning rate.
         """
         self.model = model.to(self.device)
-        self.train_loader = get_dataloader(train_set, tokenizer, batch_size=batch_size)
-        self.valid_loader = get_dataloader(valid_set, tokenizer, batch_size=batch_size)
-        self.test_loader = get_dataloader(test_set, tokenizer, batch_size=batch_size)
+        self.train_loader = get_dataloader(train_set, batch_size=batch_size)
+        self.valid_loader = get_dataloader(valid_set, batch_size=batch_size)
+        self.test_loader = get_dataloader(test_set, batch_size=batch_size)
         self.loss_fn = nn.BCEWithLogitsLoss()
         self.optimizer = optim_cls(self.model.parameters(), lr=lr)
 
