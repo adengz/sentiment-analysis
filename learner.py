@@ -1,4 +1,4 @@
-from typing import Union, Callable, Tuple, Dict
+from typing import Callable, Tuple, Dict
 import time
 
 import torch
@@ -23,7 +23,6 @@ class SentimentLearner:
             train_set: Training dataset.
             valid_set: Validation dataset.
             test_set: Testing dataset.
-            tokenizer: Tokenizer.
             batch_size: Batch size.
             optim_cls: Optimizer class.
             lr: Learning rate.
@@ -45,7 +44,7 @@ class SentimentLearner:
             batch: One batch data from iterating DataLoader.
 
         Returns:
-            loss, accuracy, batch_size
+            Loss, accuracy, batch size
         """
         tokenized, labels = batch
         for k in tokenized:
@@ -131,10 +130,10 @@ class SentimentLearner:
 
             if valid_loss < min_valid_loss:
                 min_valid_loss = valid_loss
-                torch.save(self.model.state_dict(), f'{filename}')
+                torch.save(self.model.state_dict(), filename)
                 print(f'\tModel parameters saved to {filename}')
 
-            time.sleep(0.2)  # avoid nested tqdm chaos
+            time.sleep(0.5)  # avoid nested tqdm chaos
 
     def load_model_params(self, filename: str):
         """
@@ -151,5 +150,8 @@ class SentimentLearner:
             raise KeyError('Parameters not matching with model, aborted.')
 
     def print_test_results(self):
+        """
+        Prints testing loss and accuracy.
+        """
         test_loss, test_acc = self.evaluate()
         print(f'\t Test Loss: {test_loss:.3f}\t Test Acc: {test_acc * 100:.2f}%')
