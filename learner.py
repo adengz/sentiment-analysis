@@ -1,5 +1,5 @@
-from typing import Callable, Tuple, Dict
 import time
+from typing import Callable, Tuple, Dict
 
 import torch
 from torch import nn
@@ -61,7 +61,7 @@ class SentimentLearner:
     @torch.no_grad()
     def evaluate(self, valid: bool = False) -> Tuple[float, float]:
         """
-        Evaluates metrics with a given DataLoader or just valid_loader.
+        Evaluates metrics with validation or testing dataset.
 
         Args:
             valid: Use valid dataset (True) or test dataset (False).
@@ -86,6 +86,9 @@ class SentimentLearner:
     def _train_1_epoch(self, epoch: int) -> Tuple[float, float]:
         """
         Trains model by 1 epoch.
+
+        Args:
+            epoch: Current epoch.
 
         Returns:
             Loss, accuracy

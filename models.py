@@ -59,7 +59,7 @@ class WordAveragingModel(nn.Module):
             attention_mask: batch_size, pad_len
 
         Returns:
-            Output with logits.
+            Output with logits
         """
         embedded = self.embed_dropout(self.embedding(input_ids))  # batch_size, pad_len, embed_dim
         hidden = _get_masked_mean(embedded, attention_mask)  # batch_size, embed_dim
@@ -115,7 +115,7 @@ class AttentionWeightedWordAveragingModel(nn.Module):
             attention_mask: batch_size, pad_len
 
         Returns:
-            Output with logits.
+            Output with logits
         """
         embedded = self.embed_dropout(self.embedding(input_ids))  # batch_size, pad_len, embed_dim
         attention = self.attention(embedded, attention_mask).unsqueeze(2)  # batch_size, pad_len, 1
@@ -287,7 +287,7 @@ class MultiHeadSelfAttentionModel(nn.Module):
             attention_mask: batch_size, pad_len
 
         Returns:
-            Output with logits.
+            Output with logits
         """
         # batch_size, pad_len, model_dim
         embedded = self.embedding(input_ids)

@@ -121,7 +121,7 @@ def padding_collate(batch: List[Tuple[torch.LongTensor, int]]) -> Tuple[Dict[str
 
 def get_dataloader(dataset: SentiDataset, batch_size: int, shuffle: bool = True, pin_memory: bool = True) -> DataLoader:
     """
-    Wrapper function for creating a DataLoader with a given dataset.
+    Wrapper function for creating a DataLoader loading a SentiDataset.
 
     Args:
         dataset: SentiDataset.
